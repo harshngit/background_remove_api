@@ -1,87 +1,69 @@
-from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import StreamingResponse
-from typing import Optional
+import base64
+import uuid
+import os
+import requests
+from io import BytesIO
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from rembg import remove
 from PIL import Image
-import io
-import base64
-import requests
-import uvicorn
+import numpy as np
 
-app = FastAPI(title="Background Removal API", version="3.0.0")
+app = FastAPI()
 
-@app.post("/remove-background")
-async def remove_background(
-    url: Optional[str] = Form(None),
-    base64_image: Optional[str] = Form(None)
-):
-    """
-    Remove background from:
-    - Image URL
-    - Base64 image string
-    """
+# Create output folder if missing
+os.makedirs("output", exist_ok=True)
 
-    # Validate single input
-    if not url and not base64_image:
-        raise HTTPException(status_code=400, detail="Provide url OR base64_image")
+class ImageRequest(BaseModel):
+    base64_image: str | None = None
+    image_url: str | None = None
 
-    if url and base64_image:
-        raise HTTPException(status_code=400, detail="Send ONLY ONE: url OR base64_image")
+
+def process_image(image_bytes: bytes):
+    """Remove background and return PIL image."""
+    input_image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+    output_np = remove(np.array(input_image))
+    return Image.fromarray(output_np)
+
+
+@app.post("/remove-bg")
+async def remove_bg(data: ImageRequest):
+
+    if not data.base64_image and not data.image_url:
+        return {"error": "Provide base64_image or image_url"}
 
     try:
-        # -------------------------------------------------------
-        # Process URL input
-        # -------------------------------------------------------
-        if url:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+        # ----- BASE64 INPUT -----
+        if data.base64_image:
+            image_bytes = base64.b64decode(data.base64_image)
 
-            if not response.headers.get("content-type", "").startswith("image/"):
-                raise HTTPException(status_code=400, detail="URL must point to an image")
+        # ----- IMAGE URL INPUT -----
+        elif data.image_url:
+            response = requests.get(data.image_url)
+            if response.status_code != 200:
+                return {"error": "Failed to download image from URL"}
+            image_bytes = response.content
 
-            input_image = Image.open(io.BytesIO(response.content))
+        # Process image
+        output_image = process_image(image_bytes)
 
-            # Extract filename
-            name = url.split("/")[-1].split("?")[0]
-            filename = (name.rsplit(".", 1)[0] if "." in name else "image") + ".png"
+        # Create unique filename
+        file_id = str(uuid.uuid4())
+        file_path = f"output/{file_id}.png"
 
-        # -------------------------------------------------------
-        # Process Base64 input
-        # -------------------------------------------------------
-        elif base64_image:
-            # Remove prefix like "data:image/png;base64,"
-            if "," in base64_image:
-                base64_image = base64_image.split(",")[1]
+        # Save final image
+        output_image.save(file_path, format="PNG")
 
-            try:
-                decoded = base64.b64decode(base64_image)
-                input_image = Image.open(io.BytesIO(decoded))
-                filename = "image.png"
-            except:
-                raise HTTPException(status_code=400, detail="Invalid base64 image")
+        # Public URL (Railway auto-exposes /output if static enabled)
+        public_url = f"https://YOUR-RAILWAY-DOMAIN/output/{file_id}.png"
 
-        # -------------------------------------------------------
-        # REMOVE BACKGROUND
-        # -------------------------------------------------------
-        output = remove(input_image)
+        return {"image_url": public_url}
 
-        buffer = io.BytesIO()
-        output.save(buffer, format="PNG")
-        buffer.seek(0)
-
-        return StreamingResponse(
-            buffer,
-            media_type="image/png",
-            headers={
-                "Content-Disposition": f"attachment; filename=removed_bg_{filename}"
-            }
-        )
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=400, detail=f"URL fetch error: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+        return {"error": str(e)}
 
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/")
+def home():
+    return {"message": "Background Remover API is running"}
