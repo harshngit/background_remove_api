@@ -1,18 +1,8 @@
 [phases.setup]
-nixPkgs = ['python310', 'libGL', 'glib']
+nixPkgs = ["python311"]
 
 [phases.install]
-cmds = [
-    'pip install --upgrade pip',
-    'pip install -r requirements.txt'
-]
+cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = 'uvicorn main:app --host 0.0.0.0 --port $PORT'
-```
-
-## 4. **Keep the updated main.py** (from previous response)
-
-## 5. **Keep the Procfile**
-```
-web: uvicorn main:app --host 0.0.0.0 --port $PORT
+cmd = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
