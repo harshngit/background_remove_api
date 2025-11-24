@@ -108,13 +108,21 @@ async def remove_background_endpoint(data: ImageRequest):
         # Build public URL
         railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
         railway_static = os.getenv("RAILWAY_STATIC_URL")
+        render_url = os.getenv("RENDER_EXTERNAL_URL")
+        public_domain = os.getenv("PUBLIC_DOMAIN")
+        port = os.getenv("PORT", "8000")
         
         if railway_domain:
             base_url = f"https://{railway_domain}"
         elif railway_static:
             base_url = railway_static
+        elif render_url:
+            base_url = render_url
+        elif public_domain:
+            base_url = f"https://{public_domain}"
         else:
-            base_url = "http://localhost:8000"
+            # Fallback to localhost for development
+            base_url = f"http://127.0.0.1:{port}"
         
         public_url = f"{base_url}/output/{file_id}.png"
         
@@ -154,8 +162,24 @@ async def upload_file(file: UploadFile = File(...), threshold: int = 240):
         output_image.save(file_path, format="PNG", optimize=True)
         
         # Build URL
-        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
-        base_url = f"https://{railway_domain}" if not railway_domain.startswith("http") else railway_domain
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        railway_static = os.getenv("RAILWAY_STATIC_URL")
+        render_url = os.getenv("RENDER_EXTERNAL_URL")
+        public_domain = os.getenv("PUBLIC_DOMAIN")
+        port = os.getenv("PORT", "8000")
+        
+        if railway_domain:
+            base_url = f"https://{railway_domain}"
+        elif railway_static:
+            base_url = railway_static
+        elif render_url:
+            base_url = render_url
+        elif public_domain:
+            base_url = f"https://{public_domain}"
+        else:
+            # Fallback to localhost for development
+            base_url = f"http://127.0.0.1:{port}"
+        
         public_url = f"{base_url}/output/{file_id}.png"
         
         return JSONResponse(content={
